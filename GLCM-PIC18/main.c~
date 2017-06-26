@@ -1,0 +1,252 @@
+// -*- coding: 1252 (ANSI - Latin I) -*-
+//  Algoritimo: main.c
+//	Autores...: Rubens Santos Barbosa, Rui G. Moreno
+//  Data......: 21/06/17
+//  Objetivo..: Aplicar o algoritmo GLCM (Gray Level Cooccurence Matrix) 
+//				na plataforma PIC18F4550.
+//
+//	Entrada...: Matriz da imagem, 55 linhas e 55 colunas, eh armazenada na rom do PIC
+//				num vetor de 3025 pixels. Imagem usada para coletar as informacoes
+//				dos pixels foi einstein.pgm.
+//	Saida.....: Motra os resultados do contraste, da homogeneidade, energia, correlacao.
+//
+//	Fonte.....: http://ppger.ifce.edu.br/1o-desafio-ppger-para-a-graduacao/
+//
+//  Copyright © 2017 Rubens Santos Barbosa and Rui G. Moreno. All rights reserved.//	
+
+#include <p18f4550.h>
+#include <usart.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <math.h>
+
+/** Configurações do PIC */
+#pragma config FOSC     = HS    /// EXTERN CLOCK 8MHZ 
+#pragma config WDT      = OFF   /// DISABLE WATCHDOG TIMER 
+#pragma config WDTPS    = 32768 /// WATCHDOG TIMER 32768s 
+#pragma config PBADEN   = OFF   /// PORTB.RB0,1,2,3,4 AS I/O DIGITAL
+#pragma config MCLRE    = OFF   /// MASTER CLEAR PIN (RE3) DISBALE
+
+// Contstantes
+#define TOTPIXEL 3025
+#define ROW 55
+#define COL 55
+#define valueLuminance 15
+#define LC 4
+
+// Vetor da imagem de 55x55 esta sendo armazenada no vetor coocorrence 
+// de 3025 posicoes sendo transformado depois num vetor de coocorrencia.
+rom unsigned char coocorrence[TOTPIXEL] = {
+
+3,3,3,3,3,3,3,4,3,3,3,3,3,3,3,3,4,4,3,4,3,2,1,1,2,4,7,5,4,3,5,3,3,6,5,6,5,3,3,7,7,6,6,5,2,3,4,3,4,3,3,3,4,4,3,
+2,2,1,1,1,1,3,3,3,3,3,4,3,3,3,4,3,4,4,3,3,3,5,3,3,3,2,2,1,1,4,7,12,8,3,4,5,3,3,5,3,3,7,5,3,3,5,3,4,7,7,5,3,4,5,
+3,3,4,3,3,3,3,3,4,3,2,2,1,1,1,1,1,1,3,4,3,3,3,3,3,3,3,3,3,3,5,4,3,4,5,4,3,2,2,2,2,3,4,5,3,3,5,4,3,4,5,3,3,5,4,
+4,5,3,4,7,5,3,3,7,7,6,6,4,6,6,3,2,3,4,3,4,3,2,1,1,1,0,0,0,0,4,3,4,4,4,3,4,4,4,4,4,4,5,5,4,4,6,5,4,4,5,4,3,6,6,
+5,3,4,5,3,4,5,3,3,5,4,3,5,4,3,5,3,3,5,3,3,5,3,3,5,3,4,5,4,4,5,3,3,5,3,3,5,3,3,2,5,6,3,2,3,3,2,2,2,1,1,0,0,0,1,
+0,4,4,4,4,4,3,4,4,4,4,5,4,4,5,5,5,6,6,5,6,6,6,6,7,5,3,3,5,4,3,5,4,3,5,4,3,5,3,3,5,3,3,5,4,4,5,4,3,5,4,4,12,11,5,
+4,3,5,4,4,5,4,3,5,3,3,5,4,5,2,2,2,1,1,1,1,0,0,0,0,1,1,4,4,4,4,4,3,3,4,4,4,4,5,5,4,6,6,6,6,5,6,6,5,3,3,5,3,3,5,
+3,4,5,3,4,5,4,3,5,4,3,5,3,4,5,3,3,5,4,3,5,4,4,5,4,4,5,4,3,5,4,4,12,10,5,3,3,5,3,4,5,4,3,5,4,3,7,5,4,2,1,1,1,0,0,
+0,0,0,1,1,1,4,4,4,4,4,4,4,4,4,4,4,5,6,6,6,6,6,6,7,5,3,3,5,4,3,5,4,3,5,3,4,5,3,3,5,4,4,5,4,4,5,4,3,5,3,3,5,4,3,
+5,4,4,5,4,3,5,3,4,5,3,3,5,4,4,5,4,3,5,4,3,5,4,3,5,4,4,5,3,3,5,3,3,5,4,3,5,3,3,4,4,2,1,0,0,0,0,0,0,0,1,1,5,4,4,
+4,4,4,4,4,4,4,4,5,7,5,3,3,6,6,6,6,7,5,4,3,12,11,5,4,3,5,4,3,5,4,4,5,4,4,5,4,4,5,4,3,5,4,3,5,4,3,5,4,3,5,4,3,5,3,
+4,5,3,3,5,3,3,5,4,4,5,4,4,5,4,3,12,10,5,3,3,5,3,4,7,4,3,0,0,0,0,0,0,1,1,0,1,5,4,4,4,5,3,4,5,4,4,6,5,5,6,7,7,7,6,
+5,3,4,5,4,3,5,4,3,5,4,3,5,4,3,5,4,3,5,4,3,5,4,4,5,4,4,5,4,4,5,4,4,5,4,3,5,4,4,5,4,3,5,4,4,5,4,3,5,3,4,5,3,3,5,
+3,4,5,3,3,5,4,3,5,4,4,5,3,3,5,3,3,5,4,3,7,2,1,1,0,0,0,0,0,1,0,1,5,5,4,4,5,4,4,4,4,4,4,5,5,4,7,7,6,7,5,3,4,5,4,
+3,5,4,4,5,4,4,5,4,3,5,4,3,5,4,4,5,4,3,5,4,3,5,4,3,5,4,3,5,4,3,5,4,3,12,11,5,4,3,5,4,3,5,4,3,5,3,3,5,3,4,5,3,4,5,
+4,4,5,4,3,5,3,3,7,5,4,3,3,0,0,0,0,0,0,0,1,1,6,5,4,4,5,5,5,4,5,4,3,3,4,7,5,4,3,6,7,5,4,4,5,4,3,5,4,4,5,4,4,5,4,
+3,12,11,5,4,3,5,4,3,5,4,4,5,4,4,5,4,4,5,4,4,12,11,12,11,5,4,3,5,4,4,5,4,3,5,4,3,5,3,3,5,4,3,5,4,4,12,8,5,3,3,6,0,0,0,
+0,0,0,0,0,1,1,6,5,4,5,5,5,4,4,5,5,3,3,7,5,4,4,7,7,5,4,4,5,4,3,5,4,3,5,4,3,5,4,4,5,4,4,5,4,3,5,4,4,5,4,4,5,4,3,
+5,4,3,5,4,3,5,4,3,5,4,3,5,4,3,5,4,3,5,4,3,12,11,5,4,3,5,4,3,5,4,4,5,4,3,5,4,3,5,4,4,5,4,3,5,4,3,5,3,4,5,3,3,2,5,
+3,3,0,0,0,0,0,1,1,1,6,6,4,4,5,5,4,4,4,4,4,5,3,3,12,8,5,5,4,3,5,4,3,5,4,4,5,4,3,5,4,3,5,4,3,5,4,4,5,4,4,5,4,3,5,
+4,3,5,4,3,5,4,4,5,4,4,5,4,3,5,4,4,5,4,4,5,4,3,5,4,3,5,4,4,12,11,5,4,3,5,4,3,5,4,4,5,4,3,5,4,3,5,4,3,5,4,4,5,4,3,
+5,3,4,5,3,3,0,5,3,3,0,0,0,0,1,1,1,6,6,5,4,5,4,3,3,4,4,7,5,3,3,5,3,4,5,5,3,3,5,4,3,5,4,3,5,4,3,5,4,4,5,4,3,5,4,
+3,5,4,3,5,4,4,5,4,4,5,4,3,5,4,3,5,4,4,5,4,3,5,4,3,5,4,4,5,4,3,5,4,4,5,4,3,5,4,3,5,4,3,5,4,4,12,11,5,4,4,5,4,3,5,
+4,3,5,4,4,5,4,4,5,4,3,5,3,3,5,3,3,5,2,5,3,3,0,0,0,1,1,1,6,6,5,4,5,4,2,3,5,3,3,5,3,3,5,3,4,7,6,6,5,4,3,5,4,4,5,
+4,4,5,4,4,5,4,3,5,4,3,5,4,4,5,4,4,5,4,3,5,4,4,5,4,4,5,4,3,5,4,3,5,4,4,5,4,4,5,4,3,5,4,3,5,4,3,5,4,4,12,11,5,4,4,
+5,4,4,5,4,3,5,4,4,5,4,4,5,4,3,5,4,3,5,4,4,5,4,3,5,4,3,6,3,5,2,5,3,3,0,0,1,1,1,6,6,5,4,4,3,4,5,4,3,5,3,4,7,7,6,
+5,7,5,4,3,5,4,3,5,4,4,5,4,4,5,4,3,5,4,4,5,4,3,5,4,3,5,4,3,5,4,4,5,4,4,5,4,4,5,4,3,5,4,4,5,4,4,5,4,4,5,4,3,5,4,
+4,5,4,3,5,4,3,5,4,4,5,4,3,12,11,5,4,3,5,4,3,5,4,3,5,4,3,5,4,3,5,4,3,5,4,3,5,3,4,2,5,3,3,4,2,5,3,3,0,1,1,1,6,6,5,
+3,3,2,5,3,3,5,3,4,5,5,5,6,6,5,3,4,5,4,3,5,4,3,5,4,4,5,4,3,5,4,4,5,4,3,5,4,4,5,4,3,5,4,3,5,4,4,5,4,4,5,4,3,13,11,
+5,4,4,5,4,3,5,4,3,5,4,4,5,4,4,5,4,4,5,4,3,5,4,4,5,4,3,5,4,3,5,4,3,5,4,3,5,4,4,5,4,4,12,11,5,4,3,5,4,3,6,0,0,4,1,
+5,3,3,0,0,1,6,6,5,4,3,6,7,4,6,5,3,3,5,5,3,3,6,5,3,3,5,0,5,5,3,4,5,4,4,5,4,3,5,4,3,5,4,3,5,4,4,5,4,4,5,4,3,12,10,
+5,3,3,6,7,5,3,4,5,3,3,5,4,3,5,4,3,12,11,5,4,3,12,11,5,4,4,5,4,3,5,4,3,12,11,5,4,3,5,3,4,7,5,1,2,3,5,3,3,0,0,0,5,6,5,
+3,3,5,3,3,5,3,5,3,3,5,3,4,5,5,4,4,5,6,6,5,3,3,5,4,3,5,4,4,5,4,3,5,4,4,5,4,3,5,4,3,5,4,3,5,4,3,5,4,3,5,4,3,5,4,
+3,13,11,5,4,3,5,4,3,5,4,3,5,4,3,5,4,3,5,4,3,5,4,3,5,4,3,12,11,5,4,4,5,4,3,5,4,3,13,11,5,4,3,5,3,4,7,5,3,1,3,2,0,0,1,
+6,6,5,5,5,7,5,5,5,4,3,7,7,5,4,3,6,7,5,4,3,5,4,3,5,4,4,5,4,4,5,4,4,5,4,3,5,4,4,5,4,4,5,4,3,5,4,4,5,4,4,5,4,3,5,
+4,3,5,4,3,5,4,4,5,4,4,5,4,3,5,4,3,5,4,3,13,11,5,4,4,5,4,4,5,4,3,5,4,3,5,4,3,5,4,4,5,4,4,13,10,5,3,4,5,3,3,5,3,3,7,
+4,1,5,3,3,2,1,0,0,6,5,5,6,5,4,3,7,5,4,4,6,7,5,4,3,5,5,3,4,5,4,4,13,11,5,4,4,5,4,4,5,4,4,5,4,3,5,4,4,5,4,3,5,4,4,
+5,4,3,5,4,3,5,4,3,5,4,4,13,11,5,4,4,5,4,3,5,4,3,13,11,5,4,3,5,4,3,5,4,3,5,4,3,12,11,5,4,3,5,4,3,5,4,3,5,4,4,5,3,4,5,
+3,3,5,3,4,7,4,0,5,3,3,1,1,0,6,5,5,5,3,3,2,7,5,3,3,5,7,5,3,4,5,5,4,3,5,4,4,5,4,3,7,5,4,4,12,10,5,4,3,5,4,3,5,4,4,
+5,4,3,5,4,3,5,4,3,13,11,5,3,3,5,4,3,5,4,3,5,4,3,5,4,3,13,10,5,4,3,5,4,3,5,4,3,5,4,4,5,4,3,5,4,3,5,4,4,5,4,4,5,4,4,
+5,4,3,12,9,5,3,3,5,4,3,5,4,3,4,5,3,3,0,1,1,5,4,4,4,2,2,2,7,7,4,5,3,3,7,4,13,9,7,5,4,4,5,3,3,5,3,4,5,4,3,7,5,4,3,
+5,4,3,5,4,3,12,11,5,4,3,5,3,3,5,3,4,5,4,3,5,4,3,5,3,3,5,4,3,13,11,5,4,4,5,4,3,5,4,4,12,11,5,4,3,5,4,4,5,4,3,12,11,12,11,
+5,3,3,5,3,3,5,3,3,7,4,0,0,1,5,4,4,4,2,0,1,6,6,4,5,3,4,5,3,3,5,5,4,3,7,13,8,5,3,3,5,3,3,5,4,4,7,5,3,4,5,4,3,5,4,
+3,5,4,3,5,4,3,5,3,4,12,10,0,3,5,4,3,5,4,3,5,4,3,12,11,5,4,3,5,4,3,5,4,3,5,4,4,5,4,4,5,4,4,5,4,3,13,11,5,4,4,5,4,3,5,
+3,3,5,3,4,5,4,3,6,5,3,0,0,5,3,3,4,2,1,3,7,6,5,5,3,3,5,3,3,7,12,10,5,4,3,6,4,5,4,3,5,4,4,5,3,3,5,4,3,5,4,4,12,11,12,
+10,13,8,1,6,5,4,3,5,4,3,5,4,3,12,11,5,4,3,12,11,5,4,4,5,4,3,5,4,3,12,11,5,4,3,5,4,4,5,3,3,5,4,3,5,4,4,5,3,4,5,3,4,3,2,
+3,0,4,2,3,3,2,4,4,7,5,4,6,7,5,3,3,5,4,4,5,3,3,7,5,3,4,5,4,3,13,8,6,5,4,3,5,4,3,12,11,5,4,3,5,4,3,5,3,4,5,3,4,5,4,
+3,5,4,3,5,4,3,5,4,3,5,4,4,5,4,3,5,4,3,5,4,3,12,11,5,4,3,5,4,4,13,11,5,3,4,5,4,3,5,4,4,5,4,3,5,3,4,5,3,3,5,3,3,6,7,
+0,2,1,3,1,2,3,3,3,3,5,3,3,3,2,5,5,5,3,4,5,3,3,5,4,3,5,4,3,5,4,3,5,4,3,5,4,3,5,6,5,4,4,5,4,3,5,4,4,5,4,3,5,4,3,
+12,11,5,4,3,5,4,4,5,4,3,5,4,3,5,4,4,5,4,4,5,4,3,5,4,3,5,4,3,5,4,4,5,4,3,5,4,3,12,11,5,4,4,5,4,3,5,3,3,5,3,4,12,11,5,
+3,4,5,4,3,7,5,3,1,2,3,2,1,3,2,1,5,6,3,1,2,3,5,4,4,5,4,4,5,4,3,5,4,3,12,11,5,4,3,5,5,4,3,12,10,5,4,3,5,4,3,5,4,4,5,
+4,3,13,11,5,4,3,12,11,5,4,4,5,4,3,5,4,3,5,4,3,5,4,4,5,4,4,5,4,4,5,4,3,5,4,3,5,4,4,5,3,3,5,4,4,5,4,4,7,7,5,4,4,5,4,
+4,5,4,4,5,4,3,7,5,0,1,2,1,1,2,2,3,4,3,3,2,1,2,5,4,3,5,4,3,5,4,3,5,4,4,5,4,3,5,4,4,5,3,4,7,12,11,5,4,3,5,4,3,5,4,
+3,5,4,4,5,4,3,5,4,3,5,4,3,5,4,3,5,4,3,5,4,3,5,4,3,5,4,4,12,11,5,4,4,5,4,3,5,4,3,5,4,3,5,4,3,5,4,4,5,3,3,5,4,3,5,
+4,4,5,4,4,6,7,5,4,3,5,4,4,5,4,4,5,4,4,5,3,3,2,1,1,0,1,1,2,4,3,2,2,4,1,2,5,4,4,5,4,4,5,4,4,5,4,4,5,4,4,5,4,3,7
+
+};
+
+// Global Variable
+int 	i, j, numPixel = 0, somatorio = 0;
+
+float   normalization[valueLuminance], 
+		contrast = 0, 
+		homogeneity = 0, 
+        energy = 0, 
+		correlation = 0, 
+		mi_i = 0, mi_j = 0, r_i = 0, r_j = 0;
+
+char string[12];
+
+// Protótipos
+void putch(unsigned char data);
+void inicializa_uart(void);
+void ftos(float value, char *string);
+
+// Funcão Main //
+void main(){
+
+	inicializa_uart();
+
+    //  calculo da co-ocorrencia
+    for (i = 0; i < TOTPIXEL; i++)
+    {
+        if ((i + 1) % (ROW) != 0)
+        {
+            coocorrence[coocorrence[i] * LC + coocorrence[i+1]] += 1;
+        }
+    }
+
+    //  normalizacao da co-ocorrencia
+    for (i = 0; i < valueLuminance + 1; i++)
+        somatorio += coocorrence[i];
+
+    for (i = 0; i < valueLuminance + 1; i++)
+        normalization[i] = (float)coocorrence[i]/(float)somatorio;
+
+
+    //  calculo do contraste: mede a presenÃ§a de transiÃ§Ã£o abrupta de nÃ­veis de cinza (bordas).
+    for (i = 0; i < valueLuminance + 1; i++)
+        contrast += (normalization[i] * pow(((i / LC) - (i % LC)), 2));
+
+
+    //  calculo da energia: avalia a uniformidade textural.
+    for (i = 0; i < valueLuminance + 1; i++)
+        energy += pow(normalization[i], 2);
+
+
+    //  calculo da homogeneidade: mede a homogeneidade da imagem.
+    for (i = 0; i < valueLuminance + 1; i++)
+        homogeneity += ( normalization[i] / (float)(1 + fabs( (i / LC) - (i % LC ) )) );
+
+
+    //  calculo da correlacao: mede a dependÃªncia linear de um nÃ­vel de cinza em relaÃ§Ã£o aos vizinhos.
+
+
+    for (i = 0; i < valueLuminance + 1; i++){
+        mi_i += ((i / (int)sqrt(valueLuminance + 1)) * normalization[i]);
+        mi_j += ((i % (int)sqrt(valueLuminance + 1)) * normalization[i]);
+    }
+
+    for (i = 0; i < valueLuminance + 1; i++){
+        r_i += normalization[i] * pow(((i / (int)sqrt(valueLuminance + 1)) - mi_i), 2);
+        r_j += normalization[i] * pow(((i % (int)sqrt(valueLuminance + 1)) - mi_j), 2);
+    }
+
+    //  Tirando a raiz quadrada dos elementos r_i e r_j para aplicar na formula de correlacao
+    r_i = sqrt(r_i);
+    r_j = sqrt(r_j);
+    //  Formula de correlacao
+    for (i = 0; i < valueLuminance + 1; i++)
+        correlation += ((((float)(i / (int)sqrt(valueLuminance + 1))) - mi_i) * (((float)(i % (int)sqrt(valueLuminance + 1))) - mi_j) * normalization[i]) / (r_i * r_j);
+
+	printf("\r\nContrast: ");
+    ftos(contrast, string);
+    printf("%s\n", string);
+    
+    printf("\r\nEnergy: ");
+    ftos(energy, string);
+    printf("%s\n", string); 
+    
+    printf("\r\nHomogeneity: ");
+    ftos(homogeneity, string);
+    printf("%s\n", string);
+    
+    printf("\r\nCorrelation: ");
+    ftos(correlation, string);
+    printf("%s\n", string); 
+
+	while (1){};
+}
+
+// Funcao putch eh usado no printf para imprimir os caracteres na uart, 
+// ou melhor, eh um overhead da funcao printf.
+void putch(unsigned char data) {
+    /* wait until the transmitter is ready */
+    while( ! PIR1bits.TXIF)          
+        continue;
+    /* Send the byte by putting it in the transmitter register*/
+    TXREG = data;                     
+}
+
+// Inicializa os registradores para habilitar a UART
+void inicializa_uart(void) {
+    
+    unsigned char UART1Config = 0, baud = 0;
+    
+    /* Habilita a transmissao (TX)*/
+    TXSTAbits.TXEN = 1;  
+    
+    /* Habilita porta serial*/
+    RCSTAbits.SPEN = 1;               
+    
+    /**
+     * Configura a comunicacao USART
+     * USART_TX_INT_OFF  - Desabilita as interrupcoes de Transmicao (TX)
+     * USART_RX_INT_OFF  - Desabilita as interrupcoes de Recepcao (RX)
+     * USART_ASYNCH_MODE - USAR eh habilitada em modo assincrono
+     * USART_EIGHT_BIT   - Configura o dado para ter 8 bits
+     * USART_BRGH_HIGH   - Usara alto baud rate
+     */
+    
+    UART1Config =   USART_TX_INT_OFF    & 
+                    USART_RX_INT_OFF    & 
+                    USART_ASYNCH_MODE   & 
+                    USART_EIGHT_BIT     & 
+                    USART_BRGH_HIGH;
+   
+    /* Calculo Bauderate */
+    /**
+     * X = ((FOSC/Desired Baud Rate)/16) - 1
+     * The desired baud rate is 9600, FOSC is 8000000 (8MHz) therefore the number is 51
+     */
+    baud = 51;
+    
+    /* Start the USART with the above configuration*/
+    OpenUSART(UART1Config,baud);
+
+}
+
+// Converte float para string
+void ftos( float value, char *string){
+	
+	// Adiciona sinal negativo '-' na primeira posicao da string (vetor).
+     if (value < 0) {
+         *string++ = '-';
+         value = -value;
+     }
+     // Converte a parte inteira para string e a parte decimal em string
+     sprintf(string, "%lu.%06lu",
+                 (long) value,
+                 (long) ((value - (int) value) * 1000000));
+}
